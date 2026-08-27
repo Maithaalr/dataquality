@@ -315,12 +315,36 @@ if uploaded is None:
     st.stop()
 
 try:
-    if uploaded.name.lower().endswith(".csv"):
-        df = pd.read_csv(uploaded)
+    filename = uploaded.name.lower()
+    file_bytes = uploaded.getvalue()
+
+    if filename.endswith(".csv"):
+        last_error = None
+        for enc in ["utf-8-sig", "utf-8", "cp1256", "latin1"]:
+            try:
+                df = pd.read_csv(BytesIO(file_bytes), encoding=enc)
+                last_error = None
+                break
+            except Exception as err:
+                last_error = err
+        if last_error:
+            raise last_error
+    elif filename.endswith(".xlsx"):
+        df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
+    elif filename.endswith(".xls"):
+        try:
+            df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
+        except Exception:
+            try:
+                tables = pd.read_html(BytesIO(file_bytes))
+                df = tables[0]
+            except Exception as err:
+                raise ValueError("الملف .xls غير صالح كملف Excel قديم. افتحيه في Excel ثم Save As → Excel Workbook (*.xlsx).") from err
     else:
-        df = pd.read_excel(uploaded)
+        raise ValueError("نوع الملف غير مدعوم. استخدمي xlsx أو xls أو csv.")
 except Exception as e:
     st.error(f"تعذر قراءة الملف: {e}")
+    st.info("إذا كان الملف صادر من Oracle/ERP أو تقرير قديم: افتحيه في Excel ثم Save As → Excel Workbook (*.xlsx) وبعدها ارفعي النسخة الجديدة.")
     st.stop()
 
 df.columns = [str(c).strip() for c in df.columns]
