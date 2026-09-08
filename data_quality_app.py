@@ -762,9 +762,11 @@ def audit(
                     TODAY
                 )
 
+                # Flag when the difference is more than approximately one month
+                # (1/12 of a year) instead of waiting for a difference > 1 year.
                 if abs(
                     stated - calculated
-                ) > 1:
+                ) > (1 / 12):
 
                     add_issue(
                         issues,
@@ -991,6 +993,20 @@ def audit(
 
             s = clean_text(v)
 
+            # English values are flagged so the field can be standardized in Arabic.
+            if s.casefold() in en_allowed:
+                add_issue(
+                    issues,
+                    df,
+                    idx,
+                    qcol,
+                    "Standardization",
+                    "متوسطة",
+                    v,
+                    "القيمة مكتوبة باللغة الإنجليزية. التوصية: توحيد لغة الحقل باللغة العربية لجميع السجلات."
+                )
+                continue
+
             has_ar = bool(
                 re.search(
                     r"[\u0600-\u06FF]",
@@ -1180,11 +1196,13 @@ def audit(
     if id_col:
 
         checked_rules.append(
-            "نمط رقم الهوية 784-YYYY-NNNNNNN-C"
+            "نمط رقم الهوية C-NNNNNNN-YYYY-784"
         )
 
+        # Required ID format is the reverse of the previous pattern:
+        # C-NNNNNNN-YYYY-784, e.g. 8-0591531-1927-784
         pattern = re.compile(
-            r"^784-\d{4}-\d{7}-\d$"
+            r"^\d-\d{7}-\d{4}-784$"
         )
 
         for idx, v in df[
@@ -1206,9 +1224,9 @@ def audit(
                     "Format",
                     "عالية",
                     v,
-                    "رقم الهوية يجب أن يبدأ "
-                    "بـ 784- ويتبع مثال: "
-                    "784-1927-0591531-8."
+                    "رقم الهوية يجب أن يتبع النمط "
+                    "C-NNNNNNN-YYYY-784، مثال: "
+                    "8-0591531-1927-784."
                 )
 
 
@@ -1352,7 +1370,54 @@ def audit(
 
 
     # =====================================================
-    # 11) البريد الإلكتروني
+    # 11) نوع العقد مقابل الجنسية
+    # =====================================================
+
+    contract_col = find_col(
+        df,
+        [
+            "نوع العقد",
+            "نوع عقد الموظف",
+            "العقد"
+        ]
+    )
+
+    nationality_col = find_col(df, ["الجنسية"])
+
+    if contract_col and nationality_col:
+
+        checked_rules.append(
+            "توافق نوع العقد مع الجنسية الإماراتية"
+        )
+
+        non_citizen_contract = (
+            "عقد توظيف غير مواطن بدوام كامل محدد المدة"
+        )
+
+        for idx, row in df.iterrows():
+
+            nationality = row[nationality_col]
+            contract_type = row[contract_col]
+
+            if (
+                not is_blank(nationality)
+                and is_uae_national(nationality)
+                and clean_text(contract_type) == non_citizen_contract
+            ):
+                add_issue(
+                    issues,
+                    df,
+                    idx,
+                    contract_col,
+                    "Consistency",
+                    "عالية",
+                    contract_type,
+                    "الجنسية إماراتية بينما نوع العقد مسجل كـ «عقد توظيف غير مواطن بدوام كامل محدد المدة». يرجى مراجعة وتصحيح نوع العقد."
+                )
+
+
+    # =====================================================
+    # 12) البريد الإلكتروني
     # =====================================================
 
     email_col = (
